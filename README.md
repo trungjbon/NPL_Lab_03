@@ -1,19 +1,28 @@
 # 1. Tóm tắt các Task đã thực hiện
 
 - Task 1: Tải & sử dụng model pre-trained (Gensim)
-Tải glove-wiki-gigaword-50, lấy vector 1 từ, tính cosine similarity giữa 2 từ, tìm các từ tương tự (most_similar).
+   - Tải glove-wiki-gigaword-50, lấy vector 1 từ, tính cosine similarity giữa 2 từ, tìm các từ tương tự (most_similar).
 
 - Task 2: Nhúng câu/văn bản
-Triển khai embed_document(document) bằng cách tokenize → lấy vector từng từ → bỏ OOV → tính trung bình element-wise.
+   - Triển khai embed_document(document) bằng cách tokenize → lấy vector từng từ → bỏ OOV → tính trung bình element-wise.
 
 - Task 3: Huấn luyện Word2Vec (Gensim)
-Stream file en_ewt-ud-train.txt, train Word2Vec, lưu model results/word2vec_ewt.model, load lại và dùng.
+   - Stream file en_ewt-ud-train.txt, train Word2Vec, lưu model results/word2vec_ewt.model, load lại và dùng.
+   - Các tham số mô hình:
+```
+model = Word2Vec(sentences=sentences, vector_size=100, window=5, min_count=2, workers=4, sg=1, epochs=5, compute_loss=True, callbacks=[epoch_logger])
+```
 
 - Task 4: Huấn luyện Word2Vec (Spark)
-Cài pyspark, đọc JSON lớn (C4 sample), tiền xử lý bằng Spark DataFrame, train pyspark.ml.feature.Word2Vec.
+   - Cài pyspark, đọc JSON lớn (C4 sample), tiền xử lý bằng Spark DataFrame, train pyspark.ml.feature.Word2Vec.
+   - Tạo SparkSession local[*]
+   - spark.read.json("data/c4-train.00000-of-01024-30K.json")
+   - Chọn cột text, lowercase, loại ký tự không phải a-z, split thành tokens
+   - Fit Word2Vec(vectorSize=100, inputCol="tokens")
+   - Dùng model.findSynonymsArray("computer", 5) hoặc model.getVectors() để truy xuất vectors
 
 - Task 5: Trực quan hóa embedding
-Lấy vectors → dùng PCA xuống 2D → scatter plot, annotate từ.
+   - Lấy vectors -> dùng PCA xuống 2D -> scatter plot, annotate từ.
 
 # 2. Hướng dẫn chạy code
 - Chạy code với các file ở thư mục test:
@@ -164,47 +173,39 @@ Doc vector: [ 0.04564168  0.36530998 -0.55974334  0.04014383  0.09655549  0.1562
 
 ## Phân tích trực quan hóa (PCA)
 - PCA 2D thường giữ được cấu trúc tổng quát:
-- Từ cùng chủ đề (computer, software, programming, server) sẽ tạo cụm gần nhau.
-- Từ biểu cảm xã hội/nhân vật (king, queen, man, woman) có cấu trúc "song song" thể hiện quan hệ analogy.
+- Embedding học dựa trên ngữ cảnh, từ xuất hiện trong các ngữ cảnh tương tự sẽ có vector gần nhau.
+- PCA giữ trục phương sai lớn nhất; nên chủ đề/trend xuất hiện nhiều trong dataset sẽ nằm gần nhau.
+- Kết quả trực quan hóa:
+![lab4_test](Lab_03/img/Figure_1.png)
+   - Các từ phổ biến trong tiếng Anh (“said”, “president”, “government”, “years”, “percent”, “people”) phân bố khá hợp lý, tạo thành những cụm ngữ nghĩa:
+   - Mô hình pre-trained GloVe thể hiện sự phân cụm tốt, các từ gần nhau đúng như kỳ vọng về mặt nghĩa.
+![lab4_embedding_training_demo](Lab_03/img/Figure_2.png)
+   - Các từ vẫn hình thành những cụm nhỏ như “do”, “get”, “go”, “can”, “see”, “make”, “want”, “you” -> nhóm động từ thông dụng.
+   - Nhóm “was”, “had”, “were”, “is” nằm gần nhau -> thể hiện các dạng của “to be”.
+   - Phân bố tổng thể rời rạc và chồng chéo hơn so với GloVe
+   - Model Gensim học được các quan hệ cơ bản giữa các từ phổ biến, nhưng cụm chưa rõ ràng, cần nhiều dữ liệu hơn để đạt chất lượng như pre-trained.
+![lab4_spark_word2vec_demo](Lab_03/img/Figure_3.png)
+   - Một số từ như “serious”, “incident”, “meteorologist”, “ascension” nằm tách xa -> biểu thị những từ hiếm hoặc mang ngữ nghĩa đặc thù.
+   - Các cụm rõ ràng ít hơn, nhưng sự phân bố đồng đều phản ánh hiệu quả tổng quát hóa cao của Spark khi xử lý dữ liệu lớn.
+   - Mặc dù không cụm rõ bằng GloVe, Spark Word2Vec thể hiện khả năng học embedding ổn định và hiệu quả khi xử lý dữ liệu quy mô lớn.
 
-![]()
-Quan sát thú vị (ví dụ mẫu từ kết quả chạy)
 
-computer cụm với desktop, computers, software → phản ánh ngữ cảnh công nghệ.
 
-Một số từ phi ngữ nghĩa hoặc stopwords có thể nằm rải rác, gây nhiễu; nên loại stopwords trước khi train/visualize.
+## So sánh: Pre-trained vs Self-trained
+- Pre-trained (GloVe):
+   - Học trên corpora rất lớn -> captures semantics sâu, idiomatic uses.
+   - Dùng ngay, không cần train.
+   - Không phù hợp domain quá chuyên (cần fine-tune hoặc train lại).
 
-Giải thích tại sao:
+- Self-trained (en_ewt với Gensim):
+   - Phù hợp với domain dữ liệu (nếu dataset đặc thù).
+   - Kiểm soát tham số training (window, sg/cbow, negative, min_count).
+   - Nếu dataset nhỏ -> embedding kém/ít đa dạng, nhiều từ không đủ ngữ cảnh -> chất lượng thấp.
 
-Embedding học dựa trên ngữ cảnh — từ xuất hiện trong các ngữ cảnh tương tự sẽ có vector gần nhau.
+- Spark-trained trên C4 sample:
+   - Có thể xử lý data lớn, phù hợp scale.
+   - Spark MLlib Word2Vec có API hơi khác (DataFrame-based); performance & hyperparameters khác gensim.
 
-PCA giữ trục phương sai lớn nhất; nên chủ đề/trend xuất hiện nhiều trong dataset sẽ nằm gần nhau.
-
-4.3 So sánh: Pre-trained vs Self-trained
-
-Pre-trained (GloVe):
-
-Học trên corpora rất lớn → captures semantics sâu, idiomatic uses.
-
-Dùng ngay, không cần train.
-
-Không phù hợp domain quá chuyên (cần fine-tune hoặc train lại).
-
-Self-trained (en_ewt với Gensim):
-
-Phù hợp với domain dữ liệu (nếu dataset đặc thù).
-
-Kiểm soát tham số training (window, sg/cbow, negative, min_count).
-
-Nếu dataset nhỏ → embedding kém/ít đa dạng, nhiều từ không đủ ngữ cảnh → chất lượng thấp.
-
-Spark-trained trên C4 sample:
-
-Có thể xử lý data lớn, phù hợp scale.
-
-Spark MLlib Word2Vec có API hơi khác (DataFrame-based); performance & hyperparameters khác gensim.
-
-Kết luận: Nếu bạn cần mô hình tổng quát, pre-trained lớn (GloVe/Word2Vec Google News) rất tiện. Nếu domain-specific (ví dụ log, y tế), nên train/fine-tune trên corpus domain.
 
 # 4. Những khó khăn gặp phải & giải pháp
 - Loại bỏ bớt thông tin log cho bớt rối:
